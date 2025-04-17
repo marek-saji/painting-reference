@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Painting reference</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      font-family: system-ui, sans-serif;
+    }
+    body {
+      margin: 2rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+    canvas, img {
+      max-width: 100%;
+      border: 1px solid #ccc;
+    }
+  </style>
+</head>
+<body>
+  <h1>Painting reference</h1>
+
+  <form onsubmit="event.preventDefault()">
+    <p>
+      <label>
+        Grid Size (number of rows/columns):
+        <input type="number" id="gridSize" min="1" max="24" value="4" required />
+      </label>
+    </p>
+  
+    <p>
+      <label>
+        Posterization Levels:
+        <input type="number" id="levels" min="2" max="256" value="6" required />
+      </label>
+    </p>
+  
+    <input type="file" id="upload" accept="image/*" capture="environment" required />
+  </form>
+
+  <canvas id="canvas" hidden></canvas>
+
+  <output>
+    <img id="posterized" alt="Posterized result" hidden />
+    <img id="grayscale" alt="Grayscale result" hidden />
+  </output>
+
+  <script type="module">
+    // Register service worker for offline support
+    if ('serviceWorker' in navigator) {
+      try {
+        const reg = await navigator.serviceWorker.getRegistration();
+        if (!reg) await navigator.serviceWorker.register('sw.js');
+      } catch (err) {
+        console.error('Service Worker registration failed:', err);
+      }
+    }
+  </script>
+
+  <script type="module">
+    const upload = document.getElementById('upload');
+    const levelsInput = document.getElementById('levels');
+    const gridSizeInput = document.getElementById('gridSize');
+    const canvas = document.getElementById('canvas');
+    const grayscale = document.getElementById('grayscale');
+    const posterized = document.getElementById('posterized');
+    const ctx = canvas.getContext('2d');
+    let lastBitmap = null;
+
+    if (!ctx) {
+      console.error('Failed to get 2D context');
+    }
+
+    function convertToGrayscale(imageData) {
+      const data = imageData.data;
+      for (let i = 0; i < data.length; i += 4) {
+        const avg = 0.299 * data[i] + 0.587 * data[i+1] + 0.114 * data[i+2];
+        data[i] = data[i+1] = data[i+2] = avg;
+      }
+      return imageData;
+    }
+
+    function convertToPosterized(imageData, levels) {
+      const data = imageData.data;
+      if (levels <= 1) throw new Error('Posterization levels must be greater than 1');
+      const step = 255 / (levels - 1);
+      for (let i = 0; i < data.length; i += 4) {
+        const value = data[i];
+        const posterized = Math.min(255, Math.round(value / step) * step);
+        data[i] = data[i+1] = data[i+2] = posterized;
+      }
+      return imageData;
+    }
+
+    function drawGrid(cells, imgData) {
+      if (cells <= 1) return;
+      const stepX = canvas.width / cells;
+      const stepY = canvas.height / cells;
+      ctx.lineWidth = 1;
+
+      for (let x = 0; x <= canvas.width; x += stepX) {
+        for (let y = 0; y < canvas.height; y++) {
+          const fy = Math.floor(y);
+          const fx = Math.floor(x);
+          const ix = (fy * imgData.width + fx) * 4;
+          const brightness = imgData.data[ix];
+          ctx.strokeStyle = brightness < 128 ? 'white' : 'black';
+          ctx.beginPath();
+          ctx.moveTo(x, y);
+          ctx.lineTo(x, y + 1);
+          ctx.stroke();
+        }
+      }
+
+      for (let y = 0; y <= canvas.height; y += stepY) {
+        for (let x = 0; x < canvas.width; x++) {
+          const fy = Math.floor(y);
+          const fx = Math.floor(x);
+          const ix = (fy * imgData.width + fx) * 4;
+          const brightness = imgData.data[ix];
+          ctx.strokeStyle = brightness < 128 ? 'white' : 'black';
+          ctx.beginPath();
+          ctx.moveTo(x, y);
+          ctx.lineTo(x + 1, y);
+          ctx.stroke();
+        }
+      }
+    }
+
+    function main(imageBitmap) {
+      lastBitmap = imageBitmap;
+      const levels = parseInt(levelsInput.value, 10) || 6;
+      const gridSize = parseInt(gridSizeInput.value, 10) || 0;
+
+      canvas.width = imageBitmap.width;
+      canvas.height = imageBitmap.height;
+
+      ctx.drawImage(imageBitmap, 0, 0);
+      const originalData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+
+      const grayData = convertToGrayscale(
+        new ImageData(new Uint8ClampedArray(originalData.data), originalData.width, originalData.height)
+      );
+      ctx.putImageData(grayData, 0, 0);
+      const grayWithGrid = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      if (gridSize > 1) drawGrid(gridSize, grayWithGrid);
+      grayscale.src = canvas.toDataURL();
+      grayscale.hidden = false;
+
+      ctx.putImageData(grayData, 0, 0);
+      const posterData = convertToPosterized(
+        new ImageData(new Uint8ClampedArray(grayData.data), grayData.width, grayData.height),
+        levels
+      );
+      ctx.putImageData(posterData, 0, 0);
+      if (gridSize > 1) drawGrid(gridSize, posterData);
+      posterized.src = canvas.toDataURL();
+
+      // Log all unique color values used in the posterized image
+      const pdata = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+      const colorSet = new Set();
+      for (let i = 0; i < pdata.length; i += 4) {
+        const r = pdata[i], g = pdata[i + 1], b = pdata[i + 2];
+        colorSet.add(`rgb(${r},${g},${b})`);
+      }
+      console.log('Posterized color levels used:', [...colorSet]);
+      posterized.hidden = false;
+    }
+
+    upload.addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      try {
+        const bitmap = await createImageBitmap(file);
+        main(bitmap);
+      } catch (err) {
+        console.error('Error loading image:', err);
+      }
+    });
+
+    levelsInput.addEventListener('input', () => {
+      if (lastBitmap) {
+        main(lastBitmap);
+      }
+    });
+
+    gridSizeInput.addEventListener('input', () => {
+      if (lastBitmap) {
+        main(lastBitmap);
+      }
+    });
+  </script>
+</body>
+</html>
