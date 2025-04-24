@@ -410,15 +410,18 @@
     capture.addEventListener('change', handleFileChange);
 
     let handleParamChangeDebounceTimeoutId;
-    async function handleParamChange ()
+    async function handleParamChange (event)
     {
       clearTimeout(handleParamChangeDebounceTimeoutId);
 
-      handleParamChangeDebounceTimeoutId = setTimeout(() => {
-        if (lastBitmap) {
-          void main(lastBitmap);
-        }
-      }, 250);
+      if (event.target.value !== '')
+      {
+        handleParamChangeDebounceTimeoutId = setTimeout(() => {
+          if (lastBitmap) {
+            void main(lastBitmap);
+          }
+        }, 250);
+      }
     };
 
     levelsInput.addEventListener('input', handleParamChange);
