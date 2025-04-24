@@ -6,34 +6,61 @@
   <title>Painting reference</title>
   <style>
     :root {
+      --space-normal: 1rem;
+      --space-large: 3rem;
+
+      --font-size-normal: 1rem;
+      --font-size-large: 2rem;
+
       color-scheme: light dark;
       font-family: system-ui, sans-serif;
     }
+
     body {
-      margin: 1rem;
+      margin: var(--space-normal);
       display: flex;
       flex-direction: column;
-      gap: 1rem;
+      gap: var(--space-large);
     }
+
     img,
     input,
     button {
       max-width: 100%;
     }
+
     img {
-      border: 1px solid #ccc;
+      margin-inline: auto;
       image-rendering: pixelated;
+
+      &:not([hidden]) {
+        display: block;
+      }
     }
+
     h1 {
       margin: 0;
-      text-box: trim-both cap alphabetic;
       text-align: center;
+      text-decoration: underline Mark wavy;
     }
+
+    details {
+      max-inline-size: 40ch;
+      margin-inline: auto;
+      text-wrap: pretty;
+
+      summary {
+        cursor: pointer;
+        text-align: center;
+        color: GrayText;
+      }
+    }
+
     fieldset {
       display: flex;
       flex-wrap: wrap;
-      gap: 1em;
-      margin-block-end: 1em;
+      gap: var(--space-normal);
+      margin-block-end: var(--space-normal);
       padding: 0;
       border: none;
       justify-content: center;
@@ -53,12 +80,29 @@
     input[type="file"] {
       display: block;
       margin-inline: auto;
-      font-size: clamp(1rem, calc(1rem + 1vmin), 2em);
+      font-size: clamp(1rem, calc(var(--font-size-normal) + 1vmin), var(--font-size-large));
       background-color: ButtonFace ;
       color: ButtonText;
     }
 
+    output {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-normal);
+      margin-block-start: var(--space-normal);
+
+      .loading {
+        position: absolute;
+        inset: 0;
+        font-size: var(--font-size-large);
+        text-align: center;
+        background-color: color-mix(in srgb, Canvas 80%, transparent);
+      }
+    }
+
     .values-list {
+      margin: 0;
       text-align: center;
 
       > li {
@@ -67,6 +111,7 @@
         display: inline-block;
         block-size: var(--size);
         inline-size: var(--size);
+        outline: 1px solid Canvas;
         overflow: hidden;
         text-indent: 200%;
       }
@@ -74,7 +119,16 @@
   </style>
 </head>
 <body>
-  <h1>Painting reference</h1>
+  <header>
+    <h1>🎨 painting reference</h1>
+    <details>
+      <summary>What is this?</summary>
+
+      After you upload a file, this tool will make it grayscale and squash
+      colours to requested number of colour values. It will also add a grid, so
+      it’s easier to transfer it to your canvas.
+    </details>
+  </header>
 
   <form onsubmit="event.preventDefault()">
     <fieldset>
@@ -104,6 +158,7 @@
   </form>
 
   <output>
+    <div id="loading" class="loading" hidden>Doing stuff… 🖼</div>
     <ol aria-label="Values" id="values-list" class="values-list" hidden>
     </ol>
     <img id="posterized" alt="Posterized result" hidden />
@@ -126,6 +181,8 @@
     const levelsInput = document.getElementById('levels');
     const gridSizeInput = document.getElementById('gridSize');
     const blurInput = document.getElementById('blur');
+
+    const loading = document.getElementById('loading');
     const grayscale = document.getElementById('grayscale');
     const posterized = document.getElementById('posterized');
     const valuesList = document.getElementById('values-list');
@@ -145,12 +202,24 @@
 
       const data = imageData.data;
       if (levels <= 1) throw new Error('Posterization levels must be greater than 1');
-      const step = 255 / (levels - 1);
+
+      let minValue = 255;
+      let maxValue = 0;
+      for (let i = 0; i < data.length; i += 4) {
+        minValue = Math.min(minValue, data[i]);
+        maxValue = Math.max(maxValue, data[i]);
+      }
+
+      const step = (maxValue - minValue) / (levels - 1);
       for (let i = 0; i < data.length; i += 4) {
         const value = data[i];
-        const posterized = Math.min(255, Math.round(value / step) * step);
+        const posterized = Math.min(
+          maxValue,
+          Math.round((value - minValue) / step) * step + minValue
+        );
         values.add(posterized);
         data[i] = data[i+1] = data[i+2] = posterized;
+        data[i+3] = 255;
       }
 
       return { imageData, values };
@@ -195,6 +264,7 @@
       const canvas = document.createElement('canvas');
       canvas.width = imageBitmap.width;
       canvas.height = imageBitmap.height;
+      canvas.style.imageRendering = 'pixelated';
 
       const ctx = canvas.getContext('2d', {
         willReadFrequently: true,
@@ -253,26 +323,34 @@
       return { posterizedImageUrl: canvas.toDataURL(), values };
     }
 
-    function main(imageBitmap) {
-      const levels = parseInt(levelsInput.value, 10) || 6;
-      const gridSize = parseInt(gridSizeInput.value, 10) || 0;
+    async function main(imageBitmap) {
+      try {
+        loading.hidden = false;
+        await new Promise(resolve => { setTimeout(resolve, 0) });
 
-      grayscale.src = getGrayscaleImageUrl(imageBitmap, { gridSize })
-      grayscale.hidden = false;
+        const levels = parseInt(levelsInput.value, 10) || 6;
+        const gridSize = parseInt(gridSizeInput.value, 10) || 0;
 
-      const { posterizedImageUrl, values } =
-        getPosterizedImageUrl(imageBitmap, { levels, gridSize })
-      posterized.src = posterizedImageUrl;
-      posterized.hidden = false;
+        grayscale.src = getGrayscaleImageUrl(imageBitmap, { gridSize })
+        grayscale.hidden = false;
 
-      valuesList.innerHTML = '';
-      for (const value of Array.from(values.values()).sort((a, b) => a - b)) {
-        const li = document.createElement('li');
-        li.style.backgroundColor = `rgb(${value}, ${value}, ${value})`;
-        li.textContent = value;
-        valuesList.appendChild(li);
+        const { posterizedImageUrl, values } =
+          getPosterizedImageUrl(imageBitmap, { levels, gridSize })
+        posterized.src = posterizedImageUrl;
+        posterized.hidden = false;
+
+        valuesList.innerHTML = '';
+        for (const value of Array.from(values.values()).sort((a, b) => a - b)) {
+          const li = document.createElement('li');
+          li.style.backgroundColor = `rgb(${value}, ${value}, ${value})`;
+          li.textContent = value;
+          li.title = value;
+          valuesList.appendChild(li);
+        }
+        valuesList.hidden = false;
+      } finally {
+        loading.hidden = true;
       }
-      valuesList.hidden = false;
     }
 
     upload.addEventListener('change', async (e) => {
@@ -280,27 +358,27 @@
       if (!file) return;
       try {
         lastBitmap = await createImageBitmap(file);
-        main(lastBitmap);
+        await main(lastBitmap);
       } catch (err) {
         console.error('Error loading image:', err);
       }
     });
 
-    levelsInput.addEventListener('input', () => {
+    levelsInput.addEventListener('input', async () => {
       if (lastBitmap) {
-        main(lastBitmap);
+        await main(lastBitmap);
       }
     });
 
-    gridSizeInput.addEventListener('input', () => {
+    gridSizeInput.addEventListener('input', async () => {
       if (lastBitmap) {
-        main(lastBitmap);
+        await main(lastBitmap);
       }
     });
 
-    blurInput.addEventListener('input', () => {
+    blurInput.addEventListener('input', async () => {
       if (lastBitmap) {
-        main(lastBitmap);
+        await main(lastBitmap);
       }
     });
   </script>
