@@ -29,7 +29,7 @@
     img,
     input,
     button {
-      max-width: 100%;
+      max-inline-size: 100%;
     }
 
     img {
@@ -66,6 +66,8 @@
       flex-direction: column;
       flex-wrap: wrap;
       gap: var(--space-normal);
+      margin: 0;
+      padding: 0;
       border: none;
 
       p {
@@ -79,7 +81,7 @@
       justify-content: center;
 
       input[type="number"] {
-        width: 10ch;
+        inline-size: 10ch;
         text-align: end;
         font-size: inherit;
         font-variant-numeric: tabular-nums;
@@ -88,10 +90,13 @@
 
     .files {
       text-align: center;
+      max-inline-size: 40ch;
+      align-self: center;
 
       input[type="file"] {
         display: block;
         margin-inline: auto;
+        inline-size: 100%;
         font-size: clamp(1rem, calc(var(--font-size-normal) + 1vmin), var(--font-size-large));
         background-color: ButtonFace ;
         color: ButtonText;
