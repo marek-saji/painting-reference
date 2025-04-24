@@ -1,0 +1,21 @@
+{
+  "name": "Painting reference",
+  "short_name": "Rainting ref",
+  "description": "Convert images to grayscale and posterize them for painting reference",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#000",
+  "theme_color": "#888",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    },
+    {
+      "src": "/icon.svg",
+      "sizes": "maskable",
+      "type": "image/svg+xml"
+    }
+  ]
+}
