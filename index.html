@@ -14,6 +14,7 @@
 
       color-scheme: light dark;
       font-family: system-ui, sans-serif;
+      scrollbar-gutter: stable both-edges;
     }
 
     body {
@@ -56,18 +57,24 @@
       }
     }
 
-    fieldset {
+    form,
+    .params,
+    .files {
       display: flex;
+      flex-direction: column;
       flex-wrap: wrap;
       gap: var(--space-normal);
-      margin-block-end: var(--space-normal);
-      padding: 0;
       border: none;
-      justify-content: center;
 
       p {
         margin: 0;
       }
+    }
+
+    .params {
+      flex-direction: row;
+      padding: 0;
+      justify-content: center;
 
       input[type="number"] {
         width: 10ch;
@@ -77,12 +84,16 @@
       }
     }
 
-    input[type="file"] {
-      display: block;
-      margin-inline: auto;
-      font-size: clamp(1rem, calc(var(--font-size-normal) + 1vmin), var(--font-size-large));
-      background-color: ButtonFace ;
-      color: ButtonText;
+    .files {
+      text-align: center;
+
+      input[type="file"] {
+        display: block;
+        margin-inline: auto;
+        font-size: clamp(1rem, calc(var(--font-size-normal) + 1vmin), var(--font-size-large));
+        background-color: ButtonFace ;
+        color: ButtonText;
+      }
     }
 
     output {
@@ -139,7 +150,7 @@
   </header>
 
   <form onsubmit="event.preventDefault()">
-    <fieldset>
+    <fieldset class="params">
       <p>
         <label>
           Grid Size:
@@ -162,7 +173,20 @@
       </p>
     </fieldset>
 
-    <input type="file" id="upload" accept="image/*" capture="environment" required />
+    <fieldset class="files">
+      <p>
+        <label>
+          Capture:
+          <input type="file" id="capture" accept="image/*" capture="environment" required />
+        </label>
+      </p>
+      <p>
+        <label>
+          Upload:
+          <input type="file" id="upload" accept="image/*" required />
+        </label>
+      </p>
+    </fieldset>
   </form>
 
   <output>
@@ -186,6 +210,7 @@
 
   <script type="module">
     const upload = document.getElementById('upload');
+    const capture = document.getElementById('capture');
     const levelsInput = document.getElementById('levels');
     const gridSizeInput = document.getElementById('gridSize');
     const blurInput = document.getElementById('blur');
@@ -361,19 +386,25 @@
       }
     }
 
-    upload.addEventListener('change', async (e) => {
-      const file = e.target.files[0];
+    async function handleFileChange (event)
+    {
+      const file = event.target.files[0];
       if (!file) return;
       try {
         lastBitmap = await createImageBitmap(file);
-        main(lastBitmap);
+        await main(lastBitmap);
+        event.target.value = '';
       } catch (err) {
         console.error('Error loading image:', err);
       }
-    });
+    }
+
+    upload.addEventListener('change', handleFileChange);
+    capture.addEventListener('change', handleFileChange);
 
     let handleParamChangeDebounceTimeoutId;
-    const handleParamChange = async (...args) => {
+    async function handleParamChange ()
+    {
       clearTimeout(handleParamChangeDebounceTimeoutId);
 
       handleParamChangeDebounceTimeoutId = setTimeout(() => {
