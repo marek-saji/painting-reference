@@ -93,11 +93,19 @@
       margin-block-start: var(--space-normal);
 
       .loading {
+        pointer-events: none;
         position: absolute;
         inset: 0;
         font-size: var(--font-size-large);
         text-align: center;
         background-color: color-mix(in srgb, Canvas 80%, transparent);
+        opacity: 1;
+        transition: opacity 0.2s ease-in-out;
+
+        &[hidden] {
+          display: block;
+          opacity: 0;
+        }
       }
     }
 
@@ -231,7 +239,7 @@
       const stepY = canvas.height / gridSize;
       ctx.lineWidth = 1;
 
-      for (let x = 0; x <= canvas.width; x += stepX) {
+      for (let x = stepX; x <= canvas.width; x += stepX) {
         for (let y = 0; y < canvas.height; y++) {
           const fy = Math.floor(y);
           const fx = Math.floor(x);
@@ -245,7 +253,7 @@
         }
       }
 
-      for (let y = 0; y <= canvas.height; y += stepY) {
+      for (let y = stepY; y <= canvas.height; y += stepY) {
         for (let x = 0; x < canvas.width; x++) {
           const fy = Math.floor(y);
           const fx = Math.floor(x);
@@ -326,7 +334,7 @@
     async function main(imageBitmap) {
       try {
         loading.hidden = false;
-        await new Promise(resolve => { setTimeout(resolve, 0) });
+        await new Promise(resolve => { setTimeout(resolve, 100) });
 
         const levels = parseInt(levelsInput.value, 10) || 6;
         const gridSize = parseInt(gridSizeInput.value, 10) || 0;
@@ -358,29 +366,26 @@
       if (!file) return;
       try {
         lastBitmap = await createImageBitmap(file);
-        await main(lastBitmap);
+        main(lastBitmap);
       } catch (err) {
         console.error('Error loading image:', err);
       }
     });
 
-    levelsInput.addEventListener('input', async () => {
-      if (lastBitmap) {
-        await main(lastBitmap);
-      }
-    });
+    let handleParamChangeDebounceTimeoutId;
+    const handleParamChange = async (...args) => {
+      clearTimeout(handleParamChangeDebounceTimeoutId);
 
-    gridSizeInput.addEventListener('input', async () => {
-      if (lastBitmap) {
-        await main(lastBitmap);
-      }
-    });
+      handleParamChangeDebounceTimeoutId = setTimeout(() => {
+        if (lastBitmap) {
+          void main(lastBitmap);
+        }
+      }, 250);
+    };
 
-    blurInput.addEventListener('input', async () => {
-      if (lastBitmap) {
-        await main(lastBitmap);
-      }
-    });
+    levelsInput.addEventListener('input', handleParamChange);
+    gridSizeInput.addEventListener('input', handleParamChange);
+    blurInput.addEventListener('input', handleParamChange);
   </script>
 </body>
 </html>
