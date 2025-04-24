@@ -10,14 +10,61 @@
       font-family: system-ui, sans-serif;
     }
     body {
-      margin: 2rem;
+      margin: 1rem;
       display: flex;
       flex-direction: column;
       gap: 1rem;
     }
-    canvas, img {
+    img {
       max-width: 100%;
       border: 1px solid #ccc;
+      image-rendering: pixelated;
+    }
+    h1 {
+      margin: 0;
+      text-box: trim-both cap alphabetic;
+    }
+    fieldset {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1em;
+      margin-block-end: 1em;
+      padding: 0;
+      border: none;
+      justify-content: center;
+
+      p {
+        margin: 0;
+      }
+
+      input[type="number"] {
+        width: 10ch;
+        text-align: end;
+        font-size: inherit;
+        font-variant-numeric: tabular-nums;
+      }
+    }
+
+    input[type="file"] {
+      display: block;
+      margin-inline: auto;
+      font-size: 2em;
+      background-color: ButtonFace ;
+      color: ButtonText;
+    }
+
+    .values-list {
+      text-align: center;
+
+      > li {
+        --size: 3em;
+
+        display: inline-block;
+        block-size: var(--size);
+        inline-size: var(--size);
+        overflow: hidden;
+        text-indent: 200%;
+      }
     }
   </style>
 </head>
@@ -25,32 +72,40 @@
   <h1>Painting reference</h1>
 
   <form onsubmit="event.preventDefault()">
-    <p>
-      <label>
-        Grid Size (number of rows/columns):
-        <input type="number" id="gridSize" min="1" max="24" value="4" required />
-      </label>
-    </p>
-  
-    <p>
-      <label>
-        Posterization Levels:
-        <input type="number" id="levels" min="2" max="256" value="6" required />
-      </label>
-    </p>
-  
+    <fieldset>
+      <p>
+        <label>
+          Grid Size:
+          <input type="number" id="gridSize" min="1" max="24" value="4" required />
+        </label>
+      </p>
+
+      <p>
+        <label>
+          Blur:
+          <input type="number" id="blur" min="1" step="0.001" placeholder="(auto)" />
+        </label>
+      </p>
+
+      <p>
+        <label>
+          Values:
+          <input type="number" id="levels" min="2" max="256" value="6" required />
+        </label>
+      </p>
+    </fieldset>
+
     <input type="file" id="upload" accept="image/*" capture="environment" required />
   </form>
 
-  <canvas id="canvas" hidden></canvas>
-
   <output>
+    <ol aria-label="Values" id="values-list" class="values-list" hidden>
+    </ol>
     <img id="posterized" alt="Posterized result" hidden />
     <img id="grayscale" alt="Grayscale result" hidden />
   </output>
 
   <script type="module">
-    // Register service worker for offline support
     if ('serviceWorker' in navigator) {
       try {
         const reg = await navigator.serviceWorker.getRegistration();
@@ -65,15 +120,11 @@
     const upload = document.getElementById('upload');
     const levelsInput = document.getElementById('levels');
     const gridSizeInput = document.getElementById('gridSize');
-    const canvas = document.getElementById('canvas');
+    const blurInput = document.getElementById('blur');
     const grayscale = document.getElementById('grayscale');
     const posterized = document.getElementById('posterized');
-    const ctx = canvas.getContext('2d');
+    const valuesList = document.getElementById('values-list');
     let lastBitmap = null;
-
-    if (!ctx) {
-      console.error('Failed to get 2D context');
-    }
 
     function convertToGrayscale(imageData) {
       const data = imageData.data;
@@ -85,21 +136,25 @@
     }
 
     function convertToPosterized(imageData, levels) {
+      const values = new Set();
+
       const data = imageData.data;
       if (levels <= 1) throw new Error('Posterization levels must be greater than 1');
       const step = 255 / (levels - 1);
       for (let i = 0; i < data.length; i += 4) {
         const value = data[i];
         const posterized = Math.min(255, Math.round(value / step) * step);
+        values.add(posterized);
         data[i] = data[i+1] = data[i+2] = posterized;
       }
-      return imageData;
+
+      return { imageData, values };
     }
 
-    function drawGrid(cells, imgData) {
-      if (cells <= 1) return;
-      const stepX = canvas.width / cells;
-      const stepY = canvas.height / cells;
+    function drawGrid({ gridSize, imgData, canvas, ctx }) {
+      if (gridSize <= 1) return;
+      const stepX = canvas.width / gridSize;
+      const stepY = canvas.height / gridSize;
       ctx.lineWidth = 1;
 
       for (let x = 0; x <= canvas.width; x += stepX) {
@@ -131,13 +186,22 @@
       }
     }
 
-    function main(imageBitmap) {
-      lastBitmap = imageBitmap;
-      const levels = parseInt(levelsInput.value, 10) || 6;
-      const gridSize = parseInt(gridSizeInput.value, 10) || 0;
-
+    function createCanvasAndContext (imageBitmap) {
+      const canvas = document.createElement('canvas');
       canvas.width = imageBitmap.width;
       canvas.height = imageBitmap.height;
+
+      const ctx = canvas.getContext('2d', {
+        willReadFrequently: true,
+      });
+      ctx.imageSmoothingEnabled = false;
+      ctx.filter = 'none';
+
+      return { canvas, ctx };
+    }
+
+    function getGrayscaleImageUrl(imageBitmap, { gridSize }) {
+      const { canvas, ctx } = createCanvasAndContext(imageBitmap);
 
       ctx.drawImage(imageBitmap, 0, 0);
       const originalData = ctx.getImageData(0, 0, canvas.width, canvas.height);
@@ -146,37 +210,72 @@
         new ImageData(new Uint8ClampedArray(originalData.data), originalData.width, originalData.height)
       );
       ctx.putImageData(grayData, 0, 0);
-      const grayWithGrid = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      if (gridSize > 1) drawGrid(gridSize, grayWithGrid);
-      grayscale.src = canvas.toDataURL();
-      grayscale.hidden = false;
 
-      ctx.putImageData(grayData, 0, 0);
-      const posterData = convertToPosterized(
-        new ImageData(new Uint8ClampedArray(grayData.data), grayData.width, grayData.height),
+      if (gridSize > 1) {
+        drawGrid({ gridSize, imgData: grayData, canvas, ctx });
+      }
+
+      return canvas.toDataURL();
+    }
+
+    function getPosterizedImageUrl(imageBitmap, { levels, gridSize }) {
+      const { canvas, ctx } = createCanvasAndContext(imageBitmap);
+
+      let blurRadius = parseFloat(blurInput.value);
+      if (isNaN(blurRadius)) {
+        const minDimension = Math.min(imageBitmap.width, imageBitmap.height);
+        blurRadius = minDimension * 0.0015;
+        blurInput.value = blurRadius;
+      }
+      ctx.filter = `blur(${blurRadius}px)`;
+      ctx.drawImage(imageBitmap, 0, 0);
+      ctx.filter = 'none';
+      const blurredData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const blurredGrayData = convertToGrayscale(
+        new ImageData(new Uint8ClampedArray(blurredData.data), blurredData.width, blurredData.height)
+      );
+
+      const { imageData: posterData, values } = convertToPosterized(
+        new ImageData(new Uint8ClampedArray(blurredGrayData.data), blurredGrayData.width, blurredGrayData.height),
         levels
       );
       ctx.putImageData(posterData, 0, 0);
-      if (gridSize > 1) drawGrid(gridSize, posterData);
-      posterized.src = canvas.toDataURL();
 
-      // Log all unique color values used in the posterized image
-      const pdata = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
-      const colorSet = new Set();
-      for (let i = 0; i < pdata.length; i += 4) {
-        const r = pdata[i], g = pdata[i + 1], b = pdata[i + 2];
-        colorSet.add(`rgb(${r},${g},${b})`);
+      if (gridSize > 1) {
+        drawGrid({ gridSize, imgData: posterData, canvas, ctx });
       }
-      console.log('Posterized color levels used:', [...colorSet]);
+
+      return { posterizedImageUrl: canvas.toDataURL(), values };
+    }
+
+    function main(imageBitmap) {
+      const levels = parseInt(levelsInput.value, 10) || 6;
+      const gridSize = parseInt(gridSizeInput.value, 10) || 0;
+
+      grayscale.src = getGrayscaleImageUrl(imageBitmap, { gridSize })
+      grayscale.hidden = false;
+
+      const { posterizedImageUrl, values } =
+        getPosterizedImageUrl(imageBitmap, { levels, gridSize })
+      posterized.src = posterizedImageUrl;
       posterized.hidden = false;
+
+      valuesList.innerHTML = '';
+      for (const value of Array.from(values.values()).sort((a, b) => a - b)) {
+        const li = document.createElement('li');
+        li.style.backgroundColor = `rgb(${value}, ${value}, ${value})`;
+        li.textContent = value;
+        valuesList.appendChild(li);
+      }
+      valuesList.hidden = false;
     }
 
     upload.addEventListener('change', async (e) => {
       const file = e.target.files[0];
       if (!file) return;
       try {
-        const bitmap = await createImageBitmap(file);
-        main(bitmap);
+        lastBitmap = await createImageBitmap(file);
+        main(lastBitmap);
       } catch (err) {
         console.error('Error loading image:', err);
       }
@@ -189,6 +288,12 @@
     });
 
     gridSizeInput.addEventListener('input', () => {
+      if (lastBitmap) {
+        main(lastBitmap);
+      }
+    });
+
+    blurInput.addEventListener('input', () => {
       if (lastBitmap) {
         main(lastBitmap);
       }
